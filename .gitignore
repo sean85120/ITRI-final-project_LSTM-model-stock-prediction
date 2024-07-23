@@ -1,0 +1,5 @@
+
+.ipynb_checkpoints/
+.DS_Store
+preprocess_data/
+*.h5
