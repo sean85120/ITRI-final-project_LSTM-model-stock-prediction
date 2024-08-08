@@ -2,75 +2,66 @@ import pandas as pd
 from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+import time
 
-# using selenium to send request for yahoo fin website
+def setup_driver():
+    options = Options()
+    options.add_argument("--disable-notifications")
+    service = Service("./data analysis_final project/web crawling/chromedriver")
+    return webdriver.Chrome(service=service, options=options)
 
-options = Options()
-options.add_argument("--disable-notifications")
+def scroll_page(driver, scrolls=50, delay=3):
+    for _ in range(scrolls):
+        driver.execute_script("window.scrollBy(0, document.body.scrollHeight)")
+        time.sleep(delay)
 
-chrome = webdriver.Chrome(
-    "./data analysis_final project/web crawling/chromedriver", chrome_options=options
-)
-url = "https://finance.yahoo.com/quote/%5EDJI/history?period1=1609459200&period2=1645401600&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true"
-# headers = {"User-Agent" : 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.116 Safari/537.36'}
-chrome.get(url)
+def parse_table(soup):
+    table = soup.find("table")
+    dates = table.find_all("td", class_="Py(10px) Ta(start) Pend(10px)")
+    prices = table.find_all("td", class_="Py(10px) Pstart(10px)")
+    return dates, prices
 
-for x in range(1, 50):
-    chrome.execute_script("window.scrollBy(0, document.body.scrollHeight)")
-    time.sleep(3)
-
-sp = BeautifulSoup(chrome.page_source, "lxml")
-
-# find sp500 table
-nasdaq = sp.find("table")
-
-# find date
-day = nasdaq.find_all("td", class_="Py(10px) Ta(start) Pend(10px)")
-
-# find price and vol
-price = nasdaq.find_all("td", class_="Py(10px) Pstart(10px)")
-
-# assign to dif variable
-stock_date = []
-stock_open = []
-stock_high = []
-stock_low = []
-stock_close = []
-stock_aclose = []
-stock_vol = []
-
-# assign for dates
-for i in range(len(day)):
-    stock_date.append(day[i].text)
-
-# assign for prices
-for i in range(len(price)):
-    if i % 6 == 0:
-        stock_open.append(price[i].text)
-    elif i % 6 == 1:
-        stock_high.append(price[i].text)
-    elif i % 6 == 2:
-        stock_low.append(price[i].text)
-    elif i % 6 == 3:
-        stock_close.append(price[i].text)
-    elif i % 6 == 4:
-        stock_aclose.append(price[i].text)
-    elif i % 6 == 5:
-        stock_vol.append(price[i].text)
-
-# output to csv file
-
-nasdaq_table = pd.DataFrame(
-    {
-        "Date": stock_date,
-        "Open": stock_open,
-        "High": stock_high,
-        "Low": stock_low,
-        "Close": stock_close,
-        "Adj Close": stock_aclose,
-        "Volume": stock_vol,
+def extract_data(dates, prices):
+    stock_data = {
+        "Date": [date.text for date in dates],
+        "Open": [], "High": [], "Low": [], "Close": [], "Adj Close": [], "Volume": []
     }
-)
-nasdaq_table.to_csv(
-    "data analysis_final project/web crawling/dowj_data_test2.csv", index=False
-)
+    
+    for i, price in enumerate(prices):
+        stock_data[list(stock_data.keys())[1 + i % 6]].append(price.text)
+    
+    return stock_data
+
+def main():
+    urls = [
+        "https://finance.yahoo.com/quote/%5EDJI/history?period1=1609459200&period2=1645401600&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true", # dow jones
+        "https://finance.yahoo.com/quote/%5EIXIC/history?period1=978307200&period2=1640995200&interval=1mo&filter=history&frequency=1mo&includeAdjustedClose=true" # nasdaq
+        'https://finance.yahoo.com/quote/%5EGSPC/history?period1=1609459200&period2=1645401600&interval=1d&filter=history&frequency=1d&includeAdjustedClose=true' # s&p500
+        'https://finance.yahoo.com/quote/%5ETWII/history?period1=978307200&period2=1640995200&interval=1mo&filter=history&frequency=1mo&includeAdjustedClose=true' # twii
+    ]
+    driver = setup_driver()
+
+    for url in urls:
+        try:
+            driver.get(url)
+            WebDriverWait(driver, 10).until(EC.presence_of_element_located((By.TAG_NAME, "table")))
+            scroll_page(driver)
+            
+            soup = BeautifulSoup(driver.page_source, "lxml")
+            dates, prices = parse_table(soup)
+            stock_data = extract_data(dates, prices)
+            
+            nasdaq_table = pd.DataFrame(stock_data)
+            nasdaq_table.to_csv("data analysis_final project/web crawling/dowj_data_test2.csv", index=False)
+            print("Data successfully scraped and saved to CSV.")
+        except Exception as e:
+            print(f"An error occurred: {e}")
+        finally:
+            driver.quit()
+
+if __name__ == "__main__":
+    main()
